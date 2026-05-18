@@ -1,0 +1,18 @@
+{
+  "name": "invoice-submittal-generator",
+  "version": "1.0.0",
+  "description": "Local web app to generate Invoice Submittal PDF packages",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js"
+  },
+  "dependencies": {
+    "docxtemplater": "^3.42.5",
+    "docxtemplater-image-module-free": "^1.1.1",
+    "express": "^4.18.2",
+    "multer": "^1.4.5-lts.1",
+    "pdf-lib": "^1.17.1",
+    "pizzip": "^3.1.4"
+  }
+}

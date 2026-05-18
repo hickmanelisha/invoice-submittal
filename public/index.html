@@ -1,0 +1,724 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>DebrisTech — Invoice Submittal Generator</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --orange:      #F5A623;
+      --orange-dark: #D4891A;
+      --navy:        #1B3A6B;
+      --bg:          #1E1E1E;
+      --bg-card:     #2A2A2A;
+      --bg-input:    #333333;
+      --border:      #444444;
+      --border-focus:#F5A623;
+      --text:        #E8E8E8;
+      --text-muted:  #9A9A9A;
+      --text-label:  #BBBBBB;
+      --green:       #4CAF50;
+      --red:         #E53935;
+      --blue:        #42A5F5;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+    }
+
+    /* ── Site Header ── */
+    .site-header {
+      background: #1E1E1E;
+      border-bottom: none;
+      padding: 0 2rem;
+      height: 70px;
+      display: flex;
+      align-items: center;
+      position: relative;
+    }
+    .site-header img {
+      height: 126px;
+      width: auto;
+      position: relative;
+      z-index: 1;
+    }
+    .site-header .header-title {
+      position: absolute;
+      left: 0;
+      right: 0;
+      text-align: center;
+      font-size: 1.25rem;
+      font-weight: 600;
+      color: #E8E8E8;
+      letter-spacing: 0.01em;
+      pointer-events: none;
+    }
+
+    /* ── Page content ── */
+    .page-content {
+      max-width: 820px;
+      margin: 0 auto;
+      padding: 2.2rem 1rem 5rem;
+    }
+
+    .page-title {
+      font-size: 1.35rem;
+      font-weight: 600;
+      color: var(--text);
+      margin-bottom: .3rem;
+    }
+    .page-subtitle {
+      font-size: .88rem;
+      color: var(--text-muted);
+      margin-bottom: 1.8rem;
+    }
+
+    /* ── Cards ── */
+    .card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 1.5rem 1.7rem;
+      margin-bottom: 1rem;
+    }
+    .card-title {
+      font-size: .68rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: .1em;
+      color: var(--text-muted);
+      margin-bottom: 1rem;
+    }
+
+    /* ── Template status ── */
+    .template-status {
+      display: flex;
+      align-items: center;
+      gap: .75rem;
+      padding: .75rem 1rem;
+      border-radius: 8px;
+      font-size: .875rem;
+      line-height: 1.4;
+    }
+    .template-status.ready  { background: rgba(76,175,80,.1);  border: 1px solid rgba(76,175,80,.35); }
+    .template-status.missing{ background: rgba(245,166,35,.08); border: 1px solid rgba(245,166,35,.35); }
+    .template-status .status-icon { font-size: 1.1rem; flex-shrink: 0; }
+    .template-status .status-text { flex: 1; }
+    .template-status .status-name { font-weight: 600; color: #81C784; }
+    .template-status.missing .status-name { color: var(--orange); }
+    .template-status .status-sub { color: var(--text-muted); font-size: .78rem; margin-top: .1rem; }
+
+    .template-actions { display: flex; gap: .5rem; margin-top: .75rem; }
+
+    /* ── Upload zones ── */
+    .upload-zone {
+      position: relative;
+      border: 1.5px dashed var(--border);
+      border-radius: 8px;
+      padding: 1.3rem 1rem;
+      text-align: center;
+      cursor: pointer;
+      transition: border-color .18s, background .18s;
+      background: var(--bg-input);
+    }
+    .upload-zone:hover, .upload-zone.dragover {
+      border-color: var(--orange);
+      background: rgba(245,166,35,.05);
+    }
+    .upload-zone.has-file {
+      border-color: var(--green);
+      border-style: solid;
+      background: rgba(76,175,80,.06);
+    }
+    .upload-zone input[type="file"] {
+      position: absolute; inset: 0; opacity: 0; width: 100%; height: 100%; cursor: pointer;
+    }
+    .upload-icon { font-size: 1.5rem; line-height: 1; color: var(--text-muted); }
+    .upload-filename {
+      display: block; font-size: .82rem; font-weight: 500;
+      color: var(--text-muted); margin-top: .35rem; word-break: break-all;
+    }
+    .upload-zone.has-file .upload-filename { color: #81C784; }
+    .upload-hint { display: block; font-size: .72rem; color: var(--text-muted); margin-top: .12rem; }
+
+    /* ── Form ── */
+    .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: .8rem 1rem; }
+    .form-group { display: flex; flex-direction: column; gap: .28rem; }
+    .form-group.span-2 { grid-column: 1 / -1; }
+
+    label { font-size: .8rem; font-weight: 500; color: var(--text-label); }
+    label .req { color: var(--orange); margin-left: 2px; }
+
+    input[type="text"],
+    input[type="date"],
+    select {
+      width: 100%;
+      padding: .5rem .7rem;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      font-size: .875rem;
+      color: var(--text);
+      background: var(--bg-input);
+      transition: border-color .15s, box-shadow .15s;
+      -webkit-appearance: none;
+    }
+    select {
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 10 10'%3E%3Cpath fill='%239A9A9A' d='M5 7L0 2h10z'/%3E%3C/svg%3E");
+      background-repeat: no-repeat;
+      background-position: right .7rem center;
+      padding-right: 2rem;
+      color-scheme: dark;
+    }
+    input:focus, select:focus {
+      outline: none;
+      border-color: var(--orange);
+      box-shadow: 0 0 0 3px rgba(245,166,35,.15);
+    }
+    input::placeholder { color: #555; }
+    select option { background: #2A2A2A; color: var(--text); }
+
+    /* ── Buttons ── */
+    .btn {
+      display: inline-flex; align-items: center; justify-content: center; gap: .5rem;
+      padding: .58rem 1.1rem;
+      border: none; border-radius: 7px;
+      font-size: .85rem; font-weight: 600;
+      cursor: pointer;
+      transition: background .18s, transform .12s, box-shadow .12s;
+    }
+    .btn:disabled { opacity: .45; cursor: not-allowed; transform: none !important; }
+    .btn-sm { padding: .38rem .75rem; font-size: .78rem; border-radius: 5px; }
+
+    .btn-primary {
+      background: var(--orange);
+      color: #111;
+      width: 100%;
+      padding: .8rem 1.5rem;
+      font-size: .95rem;
+      border-radius: 8px;
+      letter-spacing: .01em;
+    }
+    .btn-primary:hover:not(:disabled) {
+      background: var(--orange-dark);
+      transform: translateY(-1px);
+      box-shadow: 0 4px 18px rgba(245,166,35,.3);
+    }
+
+    .btn-download {
+      background: var(--green);
+      color: #fff;
+      width: 100%;
+      padding: .8rem 1.5rem;
+      font-size: .95rem;
+      border-radius: 8px;
+    }
+    .btn-download:hover { background: #388E3C; transform: translateY(-1px); }
+
+    .btn-outline {
+      background: transparent;
+      color: var(--text-label);
+      border: 1px solid var(--border);
+    }
+    .btn-outline:hover { background: rgba(255,255,255,.05); border-color: #666; }
+
+    .btn-save { background: var(--orange); color: #111; }
+    .btn-save:hover:not(:disabled) { background: var(--orange-dark); }
+
+    /* ── Alerts ── */
+    #status-area { margin-top: .9rem; }
+    .alert {
+      padding: .65rem .9rem; border-radius: 7px;
+      font-size: .85rem; line-height: 1.5;
+    }
+    .alert-error   { background: rgba(229,57,53,.12);  border: 1px solid rgba(229,57,53,.35);  color: #EF9A9A; }
+    .alert-info    { background: rgba(66,165,245,.1);  border: 1px solid rgba(66,165,245,.3);  color: #90CAF9; }
+    .alert-success { background: rgba(76,175,80,.1);   border: 1px solid rgba(76,175,80,.3);   color: #A5D6A7; }
+    .alert-warn    { background: rgba(245,166,35,.1);  border: 1px solid rgba(245,166,35,.3);  color: #FFE082; }
+
+    /* ── Misc ── */
+    #template-upload-panel { display: none; margin-top: .9rem; }
+    #result-card { display: none; }
+    .filename-chip {
+      display: block; margin-bottom: .9rem;
+      padding: .5rem .8rem;
+      background: #333; border: 1px solid var(--border);
+      border-radius: 6px;
+      font-family: 'SF Mono', 'Fira Code', monospace;
+      font-size: .76rem; color: var(--text-muted);
+      word-break: break-all; line-height: 1.5;
+    }
+    .divider { border: none; border-top: 1px solid var(--border); margin: 1rem 0; }
+
+    #parse-hint { margin-top: .45rem; font-size: .8rem; min-height: 1.1em; }
+
+    .spinner {
+      width: 16px; height: 16px;
+      border: 2.5px solid rgba(0,0,0,.25);
+      border-top-color: #111;
+      border-radius: 50%;
+      animation: spin .65s linear infinite;
+      flex-shrink: 0;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    @media (max-width: 560px) {
+      .form-grid { grid-template-columns: 1fr; }
+      .form-group.span-2 { grid-column: 1; }
+      .card { padding: 1.1rem; }
+      .site-header { padding: 0 1rem; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- ── Header ── -->
+<header class="site-header">
+  <img src="/debristech-logo.png?v=3" alt="DebrisTech">
+  <span class="header-title">Invoice Submittal Package Generator</span>
+</header>
+
+<div class="page-content">
+
+  <p class="page-subtitle">Upload an invoice to auto-fill the fields, then generate a merged cover letter and invoice PDF.</p>
+
+  <!-- ── Cover Letter Template ── -->
+  <div class="card">
+    <p class="card-title">Cover Letter Template</p>
+    <div id="template-status-banner"></div>
+    <div id="template-upload-panel">
+      <div class="upload-zone" id="tmpl-zone">
+        <input type="file" id="tmpl-file" accept=".docx,.dotx">
+        <div class="upload-icon">&#128196;</div>
+        <span class="upload-filename" id="tmpl-label">Click or drag a .docx / .dotx template here</span>
+        <span class="upload-hint">.docx or .dotx — saved once, reused for every package</span>
+      </div>
+      <div class="template-actions">
+        <button type="button" class="btn btn-save" id="save-template-btn" disabled>Save Template</button>
+        <button type="button" class="btn btn-outline btn-sm" id="cancel-template-btn">Cancel</button>
+      </div>
+      <div id="template-upload-status" style="margin-top:.6rem;"></div>
+    </div>
+  </div>
+
+  <form id="main-form" novalidate>
+
+    <!-- ── Invoice PDF ── -->
+    <div class="card">
+      <p class="card-title">Invoice PDF</p>
+      <label style="display:block;margin-bottom:.35rem;font-size:.82rem;">
+        Invoice PDF <span style="color:var(--orange)">*</span>
+      </label>
+      <div class="upload-zone" id="invoice-zone">
+        <input type="file" id="invoice-file" accept=".pdf">
+        <div class="upload-icon">&#128196;</div>
+        <span class="upload-filename" id="invoice-label">Click or drag your invoice PDF here</span>
+        <span class="upload-hint">.pdf only — fields below auto-fill from the invoice</span>
+      </div>
+      <p id="parse-hint"></p>
+    </div>
+
+    <!-- ── Recipient ── -->
+    <div class="card">
+      <p class="card-title">Recipient</p>
+      <div class="form-grid">
+        <div class="form-group span-2">
+          <label for="project-name">Client / County <span class="req">*</span></label>
+          <input type="text" id="project-name" placeholder="e.g. Panola County, MS">
+        </div>
+        <div class="form-group">
+          <label for="contact-name">Attn: Contact Name <span class="req">*</span></label>
+          <input type="text" id="contact-name" placeholder="e.g. Sara Russo">
+        </div>
+        <div class="form-group">
+          <label for="street-address">Street / PO Box <span class="req">*</span></label>
+          <input type="text" id="street-address" placeholder="e.g. PO Box 807">
+        </div>
+        <div class="form-group span-2">
+          <label for="city-state-zip">City, State, ZIP <span class="req">*</span></label>
+          <input type="text" id="city-state-zip" placeholder="e.g. Batesville, MS 38606">
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Invoice Details ── -->
+    <div class="card">
+      <p class="card-title">Invoice Details</p>
+      <div class="form-grid">
+        <div class="form-group span-2">
+          <label for="contractor-select">Contractor Name <span class="req">*</span></label>
+          <select id="contractor-select">
+            <option value="">— Select contractor —</option>
+          </select>
+        </div>
+        <div class="form-group span-2" id="contractor-other-row" style="display:none;">
+          <label for="contractor-other">Contractor Name (enter) <span class="req">*</span></label>
+          <input type="text" id="contractor-other" placeholder="Type contractor name">
+        </div>
+        <div class="form-group">
+          <label for="invoice-number">Invoice Number <span class="req">*</span></label>
+          <input type="text" id="invoice-number" placeholder="e.g. STM3401">
+        </div>
+        <div class="form-group">
+          <label for="invoice-amount">Invoice Amount <span class="req">*</span></label>
+          <input type="text" id="invoice-amount" placeholder="e.g. $2,089,520.32">
+        </div>
+        <div class="form-group">
+          <label for="start-date">Work Start Date <span class="req">*</span></label>
+          <input type="date" id="start-date">
+        </div>
+        <div class="form-group">
+          <label for="pe-date">Period Ending (PE) Date <span class="req">*</span></label>
+          <input type="date" id="pe-date">
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Letter & Sender ── -->
+    <div class="card">
+      <p class="card-title">Letter &amp; Sender</p>
+      <div class="form-grid">
+        <div class="form-group">
+          <label for="today-date">Letter Date <span class="req">*</span></label>
+          <input type="date" id="today-date">
+        </div>
+        <div class="form-group">
+          <label for="sender-select">Sender Name <span class="req">*</span></label>
+          <select id="sender-select">
+            <option value="">— Select sender —</option>
+          </select>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Generate ── -->
+    <div class="card">
+      <button type="submit" class="btn btn-primary" id="generate-btn">
+        Generate PDF Package
+      </button>
+      <div id="status-area"></div>
+    </div>
+
+  </form>
+
+  <!-- ── Result ── -->
+  <div class="card" id="result-card">
+    <p class="card-title">Package Ready</p>
+    <span class="filename-chip" id="filename-display"></span>
+    <button type="button" class="btn btn-download" id="download-btn">
+      Download PDF Package
+    </button>
+  </div>
+
+</div>
+
+<script>
+function $(id) { return document.getElementById(id); }
+function setStatus(html) { $('status-area').innerHTML = html; }
+
+const MONTHS = ['January','February','March','April','May','June',
+                'July','August','September','October','November','December'];
+
+function isoToMDY(iso) {
+  if (!iso) return '';
+  const [y, m, d] = iso.split('-');
+  return `${m}-${d}-${y}`;
+}
+function sanitize(s) { return (s||'').replace(/[\\/:*?"<>|]/g,'-').trim(); }
+function resolvedContractor() {
+  const sel = $('contractor-select').value;
+  return sel === '__other__' ? $('contractor-other').value.trim() : sel;
+}
+function buildFilename() {
+  const c   = sanitize(resolvedContractor()) || '___';
+  const inv = sanitize($('invoice-number').value.trim()) || '___';
+  const pe  = isoToMDY($('pe-date').value) || '___';
+  return `${c} Invoice Submittal Package - PE ${pe} ${inv}.pdf`;
+}
+
+// Auto-fill today's date
+(function() {
+  const d = new Date(), pad = n => String(n).padStart(2,'0');
+  $('today-date').value = `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
+})();
+
+// ── Template status ────────────────────────────────────────────────────────────
+let templateIsStored = false;
+
+function escHtml(s) {
+  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+async function refreshTemplateStatus() {
+  const banner = $('template-status-banner');
+  try {
+    const data = await fetch('/api/template').then(r => r.json());
+    templateIsStored = data.stored;
+    if (data.stored) {
+      const saved = new Date(data.savedAt).toLocaleDateString('en-US', { month:'short', day:'numeric', year:'numeric' });
+      const kb = (data.sizeBytes / 1024).toFixed(0);
+      banner.innerHTML = `
+        <div class="template-status ready">
+          <div class="status-text">
+            <div class="status-name">${escHtml(data.name)}</div>
+            <div class="status-sub">Saved ${saved} &middot; ${kb} KB</div>
+          </div>
+          <button type="button" class="btn btn-outline btn-sm" id="replace-template-btn">Replace</button>
+        </div>`;
+      $('replace-template-btn').addEventListener('click', showUploadPanel);
+      hideUploadPanel();
+    } else {
+      banner.innerHTML = `
+        <div class="template-status missing">
+          <div class="status-text">
+            <div class="status-name">No template saved</div>
+            <div class="status-sub">Upload your .docx or .dotx cover letter template — reused for every package.</div>
+          </div>
+        </div>`;
+      showUploadPanel();
+    }
+  } catch (_) {
+    banner.innerHTML = `<div class="alert alert-error">Could not load template status.</div>`;
+  }
+}
+
+function showUploadPanel() { $('template-upload-panel').style.display = 'block'; }
+function hideUploadPanel() {
+  $('template-upload-panel').style.display = 'none';
+  $('tmpl-file').value = '';
+  $('tmpl-label').textContent = 'Click or drag a .docx / .dotx template here';
+  $('tmpl-zone').classList.remove('has-file');
+  $('save-template-btn').disabled = true;
+  $('template-upload-status').innerHTML = '';
+}
+
+$('cancel-template-btn').addEventListener('click', () => { if (templateIsStored) hideUploadPanel(); });
+
+(function() {
+  const zone = $('tmpl-zone'), input = $('tmpl-file'), label = $('tmpl-label'), saveBtn = $('save-template-btn');
+  function applyFile(file) {
+    if (!file) return;
+    const dt = new DataTransfer(); dt.items.add(file); input.files = dt.files;
+    label.textContent = file.name;
+    zone.classList.add('has-file');
+    saveBtn.disabled = false;
+  }
+  input.addEventListener('change', () => applyFile(input.files[0]));
+  zone.addEventListener('dragover', e => { e.preventDefault(); zone.classList.add('dragover'); });
+  zone.addEventListener('dragleave', () => zone.classList.remove('dragover'));
+  zone.addEventListener('drop', e => { e.preventDefault(); zone.classList.remove('dragover'); applyFile(e.dataTransfer.files[0]); });
+})();
+
+$('save-template-btn').addEventListener('click', async () => {
+  const file = $('tmpl-file').files[0];
+  if (!file) return;
+  const btn = $('save-template-btn'), statusEl = $('template-upload-status');
+  btn.disabled = true; btn.textContent = 'Saving...';
+  statusEl.innerHTML = '';
+  const fd = new FormData(); fd.append('template', file);
+  try {
+    const resp = await fetch('/api/template', { method: 'POST', body: fd });
+    const json = await resp.json();
+    if (!resp.ok) throw new Error(json.error || 'Upload failed.');
+    await refreshTemplateStatus();
+  } catch (err) {
+    statusEl.innerHTML = `<div class="alert alert-error">${err.message}</div>`;
+    btn.disabled = false; btn.textContent = 'Save Template';
+  }
+});
+
+// ── Dropdowns ─────────────────────────────────────────────────────────────────
+async function loadOptions() {
+  try {
+    const { contractors, senders } = await fetch('/api/options').then(r => r.json());
+    const cSel = $('contractor-select');
+    contractors.forEach(n => {
+      const o = document.createElement('option'); o.value = n; o.textContent = n; cSel.appendChild(o);
+    });
+    const other = document.createElement('option'); other.value = '__other__'; other.textContent = 'Other...';
+    cSel.appendChild(other);
+    const sSel = $('sender-select');
+    senders.forEach(n => {
+      const o = document.createElement('option'); o.value = n; o.textContent = n; sSel.appendChild(o);
+    });
+  } catch (_) {
+    setStatus('<div class="alert alert-error">Could not load options — is the server running?</div>');
+  }
+}
+
+$('contractor-select').addEventListener('change', function() {
+  const show = this.value === '__other__';
+  $('contractor-other-row').style.display = show ? 'block' : 'none';
+  if (show) $('contractor-other').focus(); else $('contractor-other').value = '';
+});
+
+// ── Invoice auto-parse ─────────────────────────────────────────────────────────
+async function parseInvoiceAndFill(file) {
+  const hint = $('parse-hint');
+  hint.textContent = 'Reading invoice...';
+  hint.style.color = '#9A9A9A';
+  const fd = new FormData(); fd.append('invoice', file);
+  try {
+    const resp = await fetch('/api/parse-invoice', { method: 'POST', body: fd });
+    if (!resp.ok) { hint.textContent = ''; return; }
+    const p = await resp.json();
+    const filled = [];
+    if (p.project_name)   { $('project-name').value   = p.project_name;   filled.push('Client'); }
+    if (p.contact_name)   { $('contact-name').value   = p.contact_name;   filled.push('Contact'); }
+    if (p.street_address) { $('street-address').value = p.street_address; filled.push('Address'); }
+    if (p.city_state_zip) { $('city-state-zip').value = p.city_state_zip; filled.push('City'); }
+    if (p.invoice_number) { $('invoice-number').value = p.invoice_number; filled.push('Inv #'); }
+    if (p.invoice_amount) { $('invoice-amount').value = p.invoice_amount; filled.push('Amount'); }
+    if (p.start_date)     { $('start-date').value     = p.start_date;     filled.push('Start Date'); }
+    if (p.pe_date)        { $('pe-date').value         = p.pe_date;       filled.push('PE Date'); }
+    if (p.contractor_name) {
+      const cSel = $('contractor-select');
+      let matched = false;
+      for (const opt of cSel.options) {
+        if (!opt.value || opt.value === '__other__') continue;
+        if (p.contractor_name.toLowerCase().includes(opt.value.toLowerCase()) ||
+            opt.value.toLowerCase().includes(p.contractor_name.toLowerCase())) {
+          cSel.value = opt.value; matched = true; filled.push('Contractor'); break;
+        }
+      }
+      if (!matched) {
+        cSel.value = '__other__';
+        $('contractor-other-row').style.display = 'block';
+        $('contractor-other').value = p.contractor_name;
+        filled.push('Contractor');
+      }
+    }
+    if (filled.length) {
+      hint.textContent = `Auto-filled: ${filled.join(', ')}`;
+      hint.style.color = '#81C784';
+    } else {
+      hint.textContent = 'Could not extract fields — please fill manually.';
+      hint.style.color = '#FFE082';
+    }
+  } catch (_) { hint.textContent = ''; }
+}
+
+// ── Invoice upload zone ────────────────────────────────────────────────────────
+(function() {
+  const zone = $('invoice-zone'), input = $('invoice-file'), label = $('invoice-label');
+  function applyFile(file) {
+    if (!file) return;
+    const dt = new DataTransfer(); dt.items.add(file); input.files = dt.files;
+    label.textContent = file.name;
+    zone.classList.add('has-file');
+    parseInvoiceAndFill(file);
+  }
+  input.addEventListener('change', () => applyFile(input.files[0]));
+  zone.addEventListener('dragover', e => { e.preventDefault(); zone.classList.add('dragover'); });
+  zone.addEventListener('dragleave', () => zone.classList.remove('dragover'));
+  zone.addEventListener('drop', e => { e.preventDefault(); zone.classList.remove('dragover'); applyFile(e.dataTransfer.files[0]); });
+})();
+
+// ── Download ──────────────────────────────────────────────────────────────────
+let _blob = null, _filename = '';
+function triggerDownload() {
+  if (!_blob) return;
+  const url = URL.createObjectURL(_blob);
+  const a = Object.assign(document.createElement('a'), { href: url, download: _filename });
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+$('download-btn').addEventListener('click', triggerDownload);
+
+// ── Form submit ────────────────────────────────────────────────────────────────
+$('main-form').addEventListener('submit', async e => {
+  e.preventDefault();
+  _blob = null;
+  $('result-card').style.display = 'none';
+  setStatus('');
+
+  if (!templateIsStored) {
+    setStatus('<div class="alert alert-warn">No cover letter template saved. Please upload a template first.</div>');
+    $('template-upload-panel').style.display = 'block';
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+    return;
+  }
+
+  const contractor   = resolvedContractor();
+  const invNumber    = $('invoice-number').value.trim();
+  const invAmount    = $('invoice-amount').value.trim();
+  const peDate       = $('pe-date').value.trim();
+  const startDate    = $('start-date').value.trim();
+  const todayDate    = $('today-date').value.trim();
+  const projectName  = $('project-name').value.trim();
+  const contactName  = $('contact-name').value.trim();
+  const streetAddr   = $('street-address').value.trim();
+  const cityStateZip = $('city-state-zip').value.trim();
+  const senderName   = $('sender-select').value.trim();
+  const invoiceFile  = $('invoice-file').files[0];
+
+  const missing = [];
+  if (!projectName)  missing.push('Client / County');
+  if (!contactName)  missing.push('Contact Name');
+  if (!streetAddr)   missing.push('Street Address');
+  if (!cityStateZip) missing.push('City, State, ZIP');
+  if (!contractor)   missing.push('Contractor Name');
+  if (!invNumber)    missing.push('Invoice Number');
+  if (!invAmount)    missing.push('Invoice Amount');
+  if (!startDate)    missing.push('Work Start Date');
+  if (!peDate)       missing.push('Period Ending Date');
+  if (!todayDate)    missing.push('Letter Date');
+  if (!senderName)   missing.push('Sender Name');
+  if (!invoiceFile)  missing.push('Invoice PDF');
+
+  if (missing.length) {
+    setStatus(`<div class="alert alert-error">Please complete: <strong>${missing.join(', ')}</strong></div>`);
+    return;
+  }
+
+  const fd = new FormData();
+  fd.append('invoice',         invoiceFile);
+  fd.append('today_date',      todayDate);
+  fd.append('project_name',    projectName);
+  fd.append('contact_name',    contactName);
+  fd.append('street_address',  streetAddr);
+  fd.append('city_state_zip',  cityStateZip);
+  fd.append('contractor_name', contractor);
+  fd.append('pe_date',         peDate);
+  fd.append('start_date',      startDate);
+  fd.append('invoice_number',  invNumber);
+  fd.append('invoice_amount',  invAmount);
+  fd.append('sender_name',     senderName);
+
+  const btn = $('generate-btn');
+  btn.disabled = true;
+  btn.innerHTML = '<div class="spinner"></div> Generating...';
+  setStatus('<div class="alert alert-info">Processing — converting document to PDF, please wait...</div>');
+
+  try {
+    const resp = await fetch('/generate', { method: 'POST', body: fd });
+    if (!resp.ok) {
+      let msg = `Server error ${resp.status}.`;
+      try { const j = await resp.json(); msg = j.error || msg; } catch (_) {}
+      throw new Error(msg);
+    }
+    const header = resp.headers.get('X-Download-Filename');
+    _filename = header ? decodeURIComponent(header) : buildFilename();
+    _blob = await resp.blob();
+    setStatus('<div class="alert alert-success">Package generated successfully.</div>');
+    $('filename-display').textContent = _filename;
+    $('result-card').style.display = 'block';
+    triggerDownload();
+  } catch (err) {
+    setStatus(`<div class="alert alert-error">${err.message}</div>`);
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = 'Generate PDF Package';
+  }
+});
+
+// ── Init ──────────────────────────────────────────────────────────────────────
+refreshTemplateStatus();
+loadOptions();
+</script>
+</body>
+</html>
