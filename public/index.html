@@ -286,16 +286,17 @@
 
   <p class="page-subtitle">Upload an invoice to auto-fill the fields, then generate a merged cover letter and invoice PDF.</p>
 
-  <!-- ── Cover Letter Template ── -->
+  <!-- ── Cover Letter Templates ── -->
   <div class="card">
-    <p class="card-title">Cover Letter Template</p>
-    <div id="template-status-banner"></div>
-    <div id="template-upload-panel">
+    <p class="card-title">Cover Letter Templates</p>
+    <div id="templates-list"></div>
+    <button type="button" class="btn btn-outline btn-sm" id="add-template-btn" style="margin-top:.75rem;">+ Add Template</button>
+    <div id="template-upload-panel" style="display:none; margin-top:.9rem;">
       <div class="upload-zone" id="tmpl-zone">
         <input type="file" id="tmpl-file" accept=".docx,.dotx">
         <div class="upload-icon">&#128196;</div>
         <span class="upload-filename" id="tmpl-label">Click or drag a .docx / .dotx template here</span>
-        <span class="upload-hint">.docx or .dotx — saved once, reused for every package</span>
+        <span class="upload-hint">.docx or .dotx</span>
       </div>
       <div class="template-actions">
         <button type="button" class="btn btn-save" id="save-template-btn" disabled>Save Template</button>
@@ -382,6 +383,12 @@
     <div class="card">
       <p class="card-title">Letter &amp; Sender</p>
       <div class="form-grid">
+        <div class="form-group span-2">
+          <label for="template-select">Cover Letter Template <span class="req">*</span></label>
+          <select id="template-select">
+            <option value="">— Select template —</option>
+          </select>
+        </div>
         <div class="form-group">
           <label for="today-date">Letter Date <span class="req">*</span></label>
           <input type="date" id="today-date">
@@ -446,43 +453,56 @@ function buildFilename() {
   $('today-date').value = `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
 })();
 
-// ── Template status ────────────────────────────────────────────────────────────
-let templateIsStored = false;
-
+// ── Templates ──────────────────────────────────────────────────────────────────
 function escHtml(s) {
-  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 
-async function refreshTemplateStatus() {
-  const banner = $('template-status-banner');
+async function refreshTemplates() {
+  const list = $('templates-list');
+  const sel  = $('template-select');
   try {
-    const data = await fetch('/api/template').then(r => r.json());
-    templateIsStored = data.stored;
-    if (data.stored) {
-      const saved = new Date(data.savedAt).toLocaleDateString('en-US', { month:'short', day:'numeric', year:'numeric' });
-      const kb = (data.sizeBytes / 1024).toFixed(0);
-      banner.innerHTML = `
-        <div class="template-status ready">
-          <div class="status-text">
-            <div class="status-name">${escHtml(data.name)}</div>
-            <div class="status-sub">Saved ${saved} &middot; ${kb} KB</div>
-          </div>
-          <button type="button" class="btn btn-outline btn-sm" id="replace-template-btn">Replace</button>
-        </div>`;
-      $('replace-template-btn').addEventListener('click', showUploadPanel);
-      hideUploadPanel();
+    const templates = await fetch('/api/templates').then(r => r.json());
+
+    // Rebuild the list UI
+    if (templates.length === 0) {
+      list.innerHTML = `<p style="color:var(--text-muted);font-size:.85rem;margin:.25rem 0;">No templates yet — click Add Template to upload your first one.</p>`;
     } else {
-      banner.innerHTML = `
-        <div class="template-status missing">
-          <div class="status-text">
-            <div class="status-name">No template saved</div>
-            <div class="status-sub">Upload your .docx or .dotx cover letter template — reused for every package.</div>
-          </div>
-        </div>`;
-      showUploadPanel();
+      list.innerHTML = templates.map(t => {
+        const saved = new Date(t.savedAt).toLocaleDateString('en-US', { month:'short', day:'numeric', year:'numeric' });
+        const kb    = (t.sizeBytes / 1024).toFixed(0);
+        return `
+          <div class="template-status ready" style="margin-bottom:.5rem;">
+            <div class="status-text">
+              <div class="status-name">${escHtml(t.name)}</div>
+              <div class="status-sub">Saved ${saved} &middot; ${kb} KB</div>
+            </div>
+            <button type="button" class="btn btn-outline btn-sm" data-del="${escHtml(t.id)}">Delete</button>
+          </div>`;
+      }).join('');
+      list.querySelectorAll('[data-del]').forEach(btn => {
+        btn.addEventListener('click', async () => {
+          if (!confirm(`Delete "${btn.dataset.del}"?`)) return;
+          await fetch(`/api/templates/${encodeURIComponent(btn.dataset.del)}`, { method: 'DELETE' });
+          await refreshTemplates();
+        });
+      });
     }
+
+    // Rebuild template selector dropdown
+    const prevVal = sel.value;
+    sel.innerHTML = '<option value="">— Select template —</option>';
+    templates.forEach(t => {
+      const o = document.createElement('option');
+      o.value = t.id; o.textContent = t.name;
+      sel.appendChild(o);
+    });
+    // Restore selection or auto-select if only one
+    if (templates.find(t => t.id === prevVal)) sel.value = prevVal;
+    else if (templates.length === 1) sel.value = templates[0].id;
+
   } catch (_) {
-    banner.innerHTML = `<div class="alert alert-error">Could not load template status.</div>`;
+    list.innerHTML = `<div class="alert alert-error">Could not load templates.</div>`;
   }
 }
 
@@ -496,7 +516,8 @@ function hideUploadPanel() {
   $('template-upload-status').innerHTML = '';
 }
 
-$('cancel-template-btn').addEventListener('click', () => { if (templateIsStored) hideUploadPanel(); });
+$('add-template-btn').addEventListener('click', showUploadPanel);
+$('cancel-template-btn').addEventListener('click', hideUploadPanel);
 
 (function() {
   const zone = $('tmpl-zone'), input = $('tmpl-file'), label = $('tmpl-label'), saveBtn = $('save-template-btn');
@@ -521,10 +542,11 @@ $('save-template-btn').addEventListener('click', async () => {
   statusEl.innerHTML = '';
   const fd = new FormData(); fd.append('template', file);
   try {
-    const resp = await fetch('/api/template', { method: 'POST', body: fd });
+    const resp = await fetch('/api/templates', { method: 'POST', body: fd });
     const json = await resp.json();
     if (!resp.ok) throw new Error(json.error || 'Upload failed.');
-    await refreshTemplateStatus();
+    hideUploadPanel();
+    await refreshTemplates();
   } catch (err) {
     statusEl.innerHTML = `<div class="alert alert-error">${err.message}</div>`;
     btn.disabled = false; btn.textContent = 'Save Template';
@@ -636,9 +658,9 @@ $('main-form').addEventListener('submit', async e => {
   $('result-card').style.display = 'none';
   setStatus('');
 
-  if (!templateIsStored) {
-    setStatus('<div class="alert alert-warn">No cover letter template saved. Please upload a template first.</div>');
-    $('template-upload-panel').style.display = 'block';
+  const templateId = $('template-select').value;
+  if (!templateId) {
+    setStatus('<div class="alert alert-warn">Please select a cover letter template.</div>');
     window.scrollTo({ top: 0, behavior: 'smooth' });
     return;
   }
@@ -668,6 +690,7 @@ $('main-form').addEventListener('submit', async e => {
   if (!peDate)       missing.push('Period Ending Date');
   if (!todayDate)    missing.push('Letter Date');
   if (!senderName)   missing.push('Sender Name');
+  if (!templateId)   missing.push('Cover Letter Template');
   if (!invoiceFile)  missing.push('Invoice PDF');
 
   if (missing.length) {
@@ -688,6 +711,7 @@ $('main-form').addEventListener('submit', async e => {
   fd.append('invoice_number',  invNumber);
   fd.append('invoice_amount',  invAmount);
   fd.append('sender_name',     senderName);
+  fd.append('template_id',     templateId);
 
   const btn = $('generate-btn');
   btn.disabled = true;
@@ -717,7 +741,7 @@ $('main-form').addEventListener('submit', async e => {
 });
 
 // ── Init ──────────────────────────────────────────────────────────────────────
-refreshTemplateStatus();
+refreshTemplates();
 loadOptions();
 </script>
 </body>

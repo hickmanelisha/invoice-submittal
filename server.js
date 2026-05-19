@@ -14,8 +14,8 @@ const app  = express();
 const PORT = process.env.PORT || 3002;
 
 // ─── Paths ────────────────────────────────────────────────────────────────────
-const TEMPLATE_DIR  = path.join(__dirname, 'template');
-const TEMPLATE_META = path.join(TEMPLATE_DIR, 'meta.json');  // stores original filename
+const TEMPLATES_DIR  = path.join(__dirname, 'templates');
+const TEMPLATES_META = path.join(TEMPLATES_DIR, 'meta.json');
 
 // ─── Configuration ─────────────────────────────────────────────────────────────
 const CONTRACTORS = [
@@ -128,19 +128,66 @@ function fixTemplateBugsInZip(zip) {
   });
 }
 
-// ─── Stored template helpers ───────────────────────────────────────────────────
-function getStoredTemplatePath() {
-  // Find the single file in /template that isn't meta.json
-  if (!fs.existsSync(TEMPLATE_DIR)) return null;
-  const files = fs.readdirSync(TEMPLATE_DIR).filter(f => f !== 'meta.json');
-  return files.length ? path.join(TEMPLATE_DIR, files[0]) : null;
+// ─── Multi-template helpers ────────────────────────────────────────────────────
+function getTemplatesMeta() {
+  if (!fs.existsSync(TEMPLATES_META)) return {};
+  try { return JSON.parse(fs.readFileSync(TEMPLATES_META, 'utf8')); }
+  catch (_) { return {}; }
 }
 
-function getStoredTemplateMeta() {
-  if (!fs.existsSync(TEMPLATE_META)) return null;
-  try { return JSON.parse(fs.readFileSync(TEMPLATE_META, 'utf8')); }
-  catch (_) { return null; }
+function saveTemplatesMeta(meta) {
+  fs.writeFileSync(TEMPLATES_META, JSON.stringify(meta, null, 2));
 }
+
+function listTemplates() {
+  if (!fs.existsSync(TEMPLATES_DIR)) return [];
+  const meta = getTemplatesMeta();
+  return Object.entries(meta)
+    .map(([id, info]) => {
+      const filePath = path.join(TEMPLATES_DIR, id);
+      if (!fs.existsSync(filePath)) return null;
+      const stat = fs.statSync(filePath);
+      return { id, name: info.originalName, savedAt: info.savedAt, sizeBytes: stat.size };
+    })
+    .filter(Boolean)
+    .sort((a, b) => a.savedAt - b.savedAt);
+}
+
+function getTemplatePath(id) {
+  if (!id) return null;
+  // Prevent directory traversal
+  const safe = path.basename(id);
+  const p = path.join(TEMPLATES_DIR, safe);
+  return fs.existsSync(p) ? p : null;
+}
+
+function sanitizeFilename(name) {
+  return name.replace(/[^a-zA-Z0-9._-]/g, '_');
+}
+
+// ─── Migrate legacy single-template dir on first run ──────────────────────────
+(function migrateLegacyTemplate() {
+  const OLD_DIR  = path.join(__dirname, 'template');
+  const OLD_META = path.join(OLD_DIR, 'meta.json');
+  if (!fs.existsSync(OLD_DIR)) return;
+  const oldFiles = fs.readdirSync(OLD_DIR).filter(f => f !== 'meta.json');
+  if (!oldFiles.length) return;
+  let originalName = oldFiles[0];
+  try {
+    const m = JSON.parse(fs.readFileSync(OLD_META, 'utf8'));
+    if (m.originalName) originalName = m.originalName;
+  } catch (_) {}
+  if (!fs.existsSync(TEMPLATES_DIR)) fs.mkdirSync(TEMPLATES_DIR, { recursive: true });
+  const id = sanitizeFilename(originalName);
+  const dest = path.join(TEMPLATES_DIR, id);
+  if (!fs.existsSync(dest)) {
+    fs.copyFileSync(path.join(OLD_DIR, oldFiles[0]), dest);
+    const meta = getTemplatesMeta();
+    meta[id] = { originalName, savedAt: Date.now() };
+    saveTemplatesMeta(meta);
+    console.log(`Migrated legacy template: ${originalName}`);
+  }
+})();
 
 // ─── PDF converter detection (LibreOffice preferred, Word fallback) ────────────
 
@@ -315,64 +362,45 @@ app.get('/api/options', (_req, res) => {
   res.json({ contractors: CONTRACTORS, senders: Object.keys(SENDERS) });
 });
 
-// ─── GET /api/template ────────────────────────────────────────────────────────
-// Returns info about the currently stored template.
-app.get('/api/template', (_req, res) => {
-  const filePath = getStoredTemplatePath();
-  const meta     = getStoredTemplateMeta();
-  if (filePath && fs.existsSync(filePath)) {
-    const stat = fs.statSync(filePath);
-    res.json({
-      stored:    true,
-      name:      meta?.originalName || path.basename(filePath),
-      savedAt:   meta?.savedAt || stat.mtimeMs,
-      sizeBytes: stat.size,
-    });
-  } else {
-    res.json({ stored: false });
-  }
+// ─── GET /api/templates ───────────────────────────────────────────────────────
+// Returns list of all stored templates.
+app.get('/api/templates', (_req, res) => {
+  res.json(listTemplates());
 });
 
-// ─── POST /api/template ───────────────────────────────────────────────────────
-// Saves a new template, replacing any existing one.
-app.post('/api/template', diskUpload.single('template'), (req, res) => {
+// ─── POST /api/templates ──────────────────────────────────────────────────────
+// Uploads and saves a new template (does not replace existing ones).
+app.post('/api/templates', diskUpload.single('template'), (req, res) => {
   const file = req.file;
   if (!file) return res.status(400).json({ error: 'No file uploaded.' });
 
-  const name = file.originalname.toLowerCase();
-  if (!name.endsWith('.docx') && !name.endsWith('.dotx')) {
+  const lower = file.originalname.toLowerCase();
+  if (!lower.endsWith('.docx') && !lower.endsWith('.dotx')) {
     return res.status(400).json({ error: 'Template must be a .docx or .dotx file.' });
   }
 
-  // Clear any existing template files
-  if (fs.existsSync(TEMPLATE_DIR)) {
-    fs.readdirSync(TEMPLATE_DIR).forEach(f => {
-      fs.rmSync(path.join(TEMPLATE_DIR, f), { force: true });
-    });
-  } else {
-    fs.mkdirSync(TEMPLATE_DIR, { recursive: true });
-  }
+  if (!fs.existsSync(TEMPLATES_DIR)) fs.mkdirSync(TEMPLATES_DIR, { recursive: true });
 
-  // Save new template and metadata
-  const ext      = name.endsWith('.dotx') ? '.dotx' : '.docx';
-  const savePath = path.join(TEMPLATE_DIR, `cover_letter_template${ext}`);
+  const id       = sanitizeFilename(file.originalname);
+  const savePath = path.join(TEMPLATES_DIR, id);
   fs.writeFileSync(savePath, file.buffer);
-  fs.writeFileSync(TEMPLATE_META, JSON.stringify({
-    originalName: file.originalname,
-    savedAt:      Date.now(),
-  }));
 
-  console.log(`Template saved: ${file.originalname}`);
-  res.json({ success: true, name: file.originalname });
+  const meta = getTemplatesMeta();
+  meta[id] = { originalName: file.originalname, savedAt: Date.now() };
+  saveTemplatesMeta(meta);
+
+  console.log(`Template saved: ${file.originalname} (id: ${id})`);
+  res.json({ success: true, id, name: file.originalname });
 });
 
-// ─── DELETE /api/template ─────────────────────────────────────────────────────
-app.delete('/api/template', (_req, res) => {
-  if (fs.existsSync(TEMPLATE_DIR)) {
-    fs.readdirSync(TEMPLATE_DIR).forEach(f => {
-      fs.rmSync(path.join(TEMPLATE_DIR, f), { force: true });
-    });
-  }
+// ─── DELETE /api/templates/:id ────────────────────────────────────────────────
+app.delete('/api/templates/:id', (req, res) => {
+  const id       = path.basename(req.params.id);   // prevent traversal
+  const filePath = path.join(TEMPLATES_DIR, id);
+  if (fs.existsSync(filePath)) fs.rmSync(filePath, { force: true });
+  const meta = getTemplatesMeta();
+  delete meta[id];
+  saveTemplatesMeta(meta);
   res.json({ success: true });
 });
 
@@ -422,11 +450,19 @@ app.post(
     let tempDir = null;
 
     try {
-      // ── 1. Check stored template ─────────────────────────────────────────
-      const templatePath = getStoredTemplatePath();
-      if (!templatePath || !fs.existsSync(templatePath)) {
+      // ── 1. Resolve template ──────────────────────────────────────────────
+      const { template_id } = req.body;
+      let templatePath = null;
+      if (template_id) {
+        templatePath = getTemplatePath(template_id);
+      } else {
+        // Fall back: use first available template
+        const all = listTemplates();
+        if (all.length) templatePath = getTemplatePath(all[0].id);
+      }
+      if (!templatePath) {
         return res.status(400).json({
-          error: 'No cover letter template is saved. Please upload a template first.',
+          error: 'No cover letter template selected. Please upload and select a template first.',
         });
       }
 
@@ -590,12 +626,11 @@ app.post(
 
 // ─── Start ─────────────────────────────────────────────────────────────────────
 app.listen(PORT, () => {
-  const templatePath = getStoredTemplatePath();
-  const meta         = getStoredTemplateMeta();
-  if (templatePath) {
-    console.log(`Stored template: ${meta?.originalName || path.basename(templatePath)}`);
+  const templates = listTemplates();
+  if (templates.length) {
+    console.log(`Stored templates (${templates.length}): ${templates.map(t => t.name).join(', ')}`);
   } else {
-    console.log('No template stored yet — upload one via the UI before generating.');
+    console.log('No templates stored yet — upload one via the UI before generating.');
   }
   console.log(`\nInvoice Submittal Generator → http://localhost:${PORT}\n`);
 });
