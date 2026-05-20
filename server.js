@@ -25,6 +25,7 @@ const CONTRACTORS = [
   'DRC Emergency Services',
   'Crowder Gulf',
   'TFR Enterprises',
+  'SDR',
 ];
 
 const SENDERS = {
@@ -64,24 +65,30 @@ function isoToMDY(iso) {
 // forms a complete {{…}} tag into a single run, then hand the clean XML to
 // docxtemplater.
 function mergeTagRuns(xml) {
-  // Three bugs fixed vs the naive version:
-  //   1. <w:r> → <w:r\b[^>]*> to allow run attributes like w:rsidR="..."
-  //   2. Greedy + → lazy +? so the middle group stops at the first }}, not the last
-  //   3. [\s\S]*? in the rPr match uses a tempered greedy token
-  //      (?:(?!<\/w:rPr>)[\s\S])* so it cannot cross </w:rPr> boundaries and
-  //      "cheat" by consuming entire adjacent runs as rPr content.
   const rpr = '(?:<w:rPr>(?:(?!<\\/w:rPr>)[\\s\\S])*<\\/w:rPr>)?';
   const run = `<w:r\\b[^>]*>${rpr}<w:t[^>]*>`;
-  const pat = new RegExp(
-    `${run}\\{\\{<\\/w:t><\\/w:r>((?:${run}[^<]*<\\/w:t><\\/w:r>)+?)${run}\\}\\}<\\/w:t><\\/w:r>`,
+
+  // Pass 1 — {{ alone in its own run (most common Word split)
+  const pat1 = new RegExp(
+    `${run}\\{\\{<\\/w:t><\\/w:r>((?:${run}[^<]*<\\/w:t><\\/w:r>)+?)${run}\\}\\}\\}?<\\/w:t><\\/w:r>`,
     'g'
   );
-  return xml.replace(pat, (_match, middle) => {
-    const tagContent = [...middle.matchAll(/<w:t[^>]*>([^<]*)<\/w:t>/g)]
-      .map(m => m[1])
-      .join('');
-    return `<w:r><w:t>{{${tagContent}}}</w:t></w:r>`;
+  xml = xml.replace(pat1, (_m, middle) => {
+    const tag = [...middle.matchAll(/<w:t[^>]*>([^<]*)<\/w:t>/g)].map(m => m[1]).join('');
+    return `<w:r><w:t>{{${tag}}}</w:t></w:r>`;
   });
+
+  // Pass 2 — text + {{ in same run (e.g. " {{"), closing run may have }}} not just }}
+  const pat2 = new RegExp(
+    `(${run})([^<]+)\\{\\{<\\/w:t><\\/w:r>((?:${run}[^<]*<\\/w:t><\\/w:r>)+?)${run}\\}\\}\\}?<\\/w:t><\\/w:r>`,
+    'g'
+  );
+  xml = xml.replace(pat2, (_m, openRun, leadText, middle) => {
+    const tag = [...middle.matchAll(/<w:t[^>]*>([^<]*)<\/w:t>/g)].map(m => m[1]).join('');
+    return `<w:r><w:t xml:space="preserve">${leadText}</w:t></w:r><w:r><w:t>{{${tag}}}</w:t></w:r>`;
+  });
+
+  return xml;
 }
 
 // ─── Font enforcement: Times New Roman 12 pt ──────────────────────────────────
@@ -290,7 +297,49 @@ function mdyToIso(mdy) {
   return `${year}-${m.padStart(2, '0')}-${d.padStart(2, '0')}`;
 }
 
-function parseInvoiceText(text) {
+// ─── SDR invoice parser ───────────────────────────────────────────────────────
+// SDR invoices use "BILL TO" (no colon), "INVOICE #", "DATE", "BALANCE DUE"
+function parseSDRInvoice(text) {
+  const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
+  const result = {};
+
+  result.contractor_name = 'SDR';
+
+  // Invoice number — "INVOICE # 24130103111"
+  const invMatch = text.match(/INVOICE\s*#\s+([A-Z0-9-]+)/i);
+  if (invMatch) result.invoice_number = invMatch[1];
+
+  // PE date — "DATE 04/30/2026" (single date, not a range)
+  const dateMatch = text.match(/\bDATE\s+(\d{1,2}\/\d{1,2}\/\d{2,4})/i);
+  if (dateMatch) result.pe_date = mdyToIso(dateMatch[1]);
+  // No start_date on SDR invoices — user enters manually
+
+  // Amount — "BALANCE DUE $75,930.15"
+  const balMatch = text.match(/BALANCE DUE\s+\$?([\d,]+(?:\.\d{2})?)/i);
+  if (balMatch) result.invoice_amount = '$' + balMatch[1];
+
+  // Bill-To block — lines after "BILL TO" until an invoice-field keyword
+  const billToIdx = lines.findIndex(l => /^BILL\s+TO$/i.test(l));
+  if (billToIdx >= 0) {
+    const addrLines = [];
+    for (let i = billToIdx + 1; i < Math.min(billToIdx + 8, lines.length); i++) {
+      const l = lines[i];
+      if (/^(INVOICE|DATE|DUE DATE|TERMS)/i.test(l)) break;
+      if (/@/.test(l)) continue;
+      addrLines.push(l);
+    }
+    if (addrLines[0]) result.project_name   = addrLines[0];
+    if (addrLines[1]) result.street_address = addrLines[1];
+    const cityLine = addrLines.find(l => /\d{5}/.test(l));
+    if (cityLine) result.city_state_zip = cityLine;
+  }
+
+  return result;
+}
+
+// ─── MS invoice parser (unchanged) ───────────────────────────────────────────
+// MS invoices use "Bill To:" (with colon + Attn: block), "Invoice Number:", date range in parens
+function parseMSInvoice(text) {
   const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
   const result = {};
 
@@ -320,28 +369,24 @@ function parseInvoiceText(text) {
 
   // Bill-To block: project name, contact, street, city/state/zip
   if (billToIdx >= 0) {
-    // Client name is on the next line (may have "Invoice Number: X" appended)
     const clientLine = lines[billToIdx + 1] || '';
     const clientName = clientLine.replace(/Invoice Number.*$/i, '').trim();
     if (clientName) result.project_name = clientName;
 
-    // Scan for Attn: line, then grab address lines below it
     for (let i = billToIdx; i < Math.min(billToIdx + 10, lines.length); i++) {
       const attnMatch = lines[i].match(/^Attn:\s*(.+)/i);
       if (!attnMatch) continue;
 
       result.contact_name = attnMatch[1].replace(/Job Number.*$/i, '').trim();
 
-      // Collect the next non-email, non-header lines as address
       const addrCandidates = [];
       for (let j = i + 1; j < Math.min(i + 7, lines.length); j++) {
         const l = lines[j];
-        if (/@/.test(l)) continue;             // skip email addresses
-        if (/Invoice|Bill To/i.test(l)) break; // stop at next section
+        if (/@/.test(l)) continue;
+        if (/Invoice|Bill To/i.test(l)) break;
         addrCandidates.push(l);
       }
       if (addrCandidates[0]) result.street_address = addrCandidates[0];
-      // City/State/ZIP line contains a 5-digit zip
       const cityLine = addrCandidates.find(l => /\d{5}/.test(l));
       if (cityLine) result.city_state_zip = cityLine;
       break;
@@ -349,6 +394,13 @@ function parseInvoiceText(text) {
   }
 
   return result;
+}
+
+// ─── Invoice parser dispatcher ────────────────────────────────────────────────
+function parseInvoiceText(text) {
+  // SDR invoices: uppercase "INVOICE #" with space, and "SDR" in contractor header
+  const isSDR = /INVOICE\s*#\s+\d/i.test(text) && /SDR/i.test(text);
+  return isSDR ? parseSDRInvoice(text) : parseMSInvoice(text);
 }
 
 // ─── Express / Multer ─────────────────────────────────────────────────────────
@@ -513,6 +565,7 @@ app.post(
       const date_range         = isoToMDY(pe_date);
       const invoice_end_date   = isoToLong(pe_date);
       const invoice_start_date = isoToLong(start_date);
+      const formatted_today    = isoToLong(today_date);
 
       // ── 4. Load template & fix known placeholder bugs in the decompressed XML
       let zip;
@@ -551,7 +604,7 @@ app.post(
 
       try {
         doc.render({
-          today_date,
+          today_date: formatted_today,
           project_name,
           contact_name,
           street_address,
