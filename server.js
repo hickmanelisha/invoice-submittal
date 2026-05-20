@@ -536,7 +536,6 @@ app.post(
       const missing = [];
       if (!today_date?.trim())       missing.push('Letter Date');
       if (!project_name?.trim())     missing.push('Client / County');
-      if (!contact_name?.trim())     missing.push('Contact Name');
       if (!street_address?.trim())   missing.push('Street Address');
       if (!city_state_zip?.trim())   missing.push('City, State, ZIP');
       if (!contractor_name?.trim())  missing.push('Contractor Name');
