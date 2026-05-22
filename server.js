@@ -173,6 +173,35 @@ function sanitizeFilename(name) {
   return name.replace(/[^a-zA-Z0-9._-]/g, '_');
 }
 
+// ─── Sync meta.json to match files on disk at startup ────────────────────────
+// Removes meta entries whose file is gone, removes orphan files not in meta.
+// This prevents stale Railway volume entries from showing in the dropdown.
+(function syncTemplatesOnStartup() {
+  if (!fs.existsSync(TEMPLATES_DIR)) return;
+  const meta = getTemplatesMeta();
+  let changed = false;
+
+  // Remove meta entries with no matching file
+  for (const id of Object.keys(meta)) {
+    if (!fs.existsSync(path.join(TEMPLATES_DIR, id))) {
+      console.log(`Removing stale meta entry: ${id}`);
+      delete meta[id];
+      changed = true;
+    }
+  }
+
+  // Remove files not in meta (orphans from old deployments)
+  for (const file of fs.readdirSync(TEMPLATES_DIR)) {
+    if (file === 'meta.json') continue;
+    if (!meta[file]) {
+      console.log(`Removing orphan template file: ${file}`);
+      fs.rmSync(path.join(TEMPLATES_DIR, file), { force: true });
+    }
+  }
+
+  if (changed) saveTemplatesMeta(meta);
+})();
+
 // ─── Migrate legacy single-template dir on first run ──────────────────────────
 (function migrateLegacyTemplate() {
   const OLD_DIR  = path.join(__dirname, 'template');
