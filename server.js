@@ -26,6 +26,7 @@ const CONTRACTORS = [
   'Crowder Gulf',
   'TFR Enterprises',
   'SDR',
+  'CTC Disaster Response',
 ];
 
 const SENDERS = {
@@ -396,11 +397,55 @@ function parseMSInvoice(text) {
   return result;
 }
 
+// ─── CTC invoice parser ───────────────────────────────────────────────────────
+// CTC invoices: "Bill to" (lowercase), "Invoice no.:", "Period Ending" date, "Ship to" boundary
+function parseCTCInvoice(text) {
+  const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
+  const result = {};
+
+  result.contractor_name = 'CTC Disaster Response';
+
+  // Invoice number — "Invoice no.: CTC10030"
+  const invMatch = text.match(/Invoice\s+no\.\s*:\s*([A-Z0-9-]+)/i);
+  if (invMatch) result.invoice_number = invMatch[1];
+
+  // PE date — "Period Ending 05/16/2026"
+  const peMatch = text.match(/Period\s+Ending\s+(\d{1,2}\/\d{1,2}\/\d{2,4})/i);
+  if (peMatch) result.pe_date = mdyToIso(peMatch[1]);
+  // No start_date — user enters manually
+
+  // Amount — "Total $2,258,543.91"
+  const totalMatch = text.match(/\bTotal\s+\$?([\d,]+(?:\.\d{2})?)/i);
+  if (totalMatch) result.invoice_amount = '$' + totalMatch[1];
+
+  // Bill-to block — lines after "Bill to", stop at "Ship to"
+  const billToIdx = lines.findIndex(l => /^Bill\s+to$/i.test(l));
+  if (billToIdx >= 0) {
+    const addrLines = [];
+    for (let i = billToIdx + 1; i < Math.min(billToIdx + 8, lines.length); i++) {
+      const l = lines[i];
+      if (/^Ship\s+to$/i.test(l)) break;
+      if (/@/.test(l)) continue;
+      addrLines.push(l);
+    }
+    if (addrLines[0]) result.project_name   = addrLines[0];
+    if (addrLines[1]) result.street_address = addrLines[1];
+    const cityLine = addrLines.find(l => /\d{5}/.test(l));
+    if (cityLine) result.city_state_zip = cityLine;
+  }
+
+  return result;
+}
+
 // ─── Invoice parser dispatcher ────────────────────────────────────────────────
 function parseInvoiceText(text) {
-  // SDR invoices: uppercase "INVOICE #" with space, and "SDR" in contractor header
+  // SDR invoices: uppercase "INVOICE #" with space, and "SDR" in text
   const isSDR = /INVOICE\s*#\s+\d/i.test(text) && /SDR/i.test(text);
-  return isSDR ? parseSDRInvoice(text) : parseMSInvoice(text);
+  // CTC invoices: "Invoice no.:" pattern and "CTC" in text
+  const isCTC = /Invoice\s+no\.\s*:/i.test(text) && /CTC/i.test(text);
+  if (isSDR) return parseSDRInvoice(text);
+  if (isCTC) return parseCTCInvoice(text);
+  return parseMSInvoice(text);
 }
 
 // ─── Express / Multer ─────────────────────────────────────────────────────────
