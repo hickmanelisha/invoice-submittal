@@ -290,10 +290,10 @@ async function convertDocxToPdf(docxPath, outputDir) {
 }
 
 // ─── Invoice PDF text parser ──────────────────────────────────────────────────
-// Converts M/D/YY or M/D/YYYY → YYYY-MM-DD for <input type="date">
+// Converts M/D/YY, M/D/YYYY, or M.D.YYYY → YYYY-MM-DD for <input type="date">
 function mdyToIso(mdy) {
   if (!mdy) return '';
-  const [m, d, y] = mdy.split('/');
+  const [m, d, y] = mdy.split(/[\/\.]/);
   const year = y.length === 2 ? '20' + y : y;
   return `${year}-${m.padStart(2, '0')}-${d.padStart(2, '0')}`;
 }
@@ -409,8 +409,8 @@ function parseCTCInvoice(text) {
   const invMatch = text.match(/Invoice\s+no\.\s*:\s*([A-Z0-9-]+)/i);
   if (invMatch) result.invoice_number = invMatch[1];
 
-  // PE date — "Period Ending 05/16/2026"
-  const peMatch = text.match(/Period\s+Ending\s+(\d{1,2}\/\d{1,2}\/\d{2,4})/i);
+  // PE date — "Period Ending 05/16/2026" or "Period Ending 04.30.2026"
+  const peMatch = text.match(/Period\s+Ending\s+(\d{1,2}[\/\.]\d{1,2}[\/\.]\d{2,4})/i);
   if (peMatch) result.pe_date = mdyToIso(peMatch[1]);
   // No start_date — user enters manually
 
