@@ -1,8 +1,4 @@
 {
-  "MS_Invoice_Submittal_Package.dotx": {
-    "originalName": "MS_Invoice_Submittal_Package.dotx",
-    "savedAt": 1779199068405
-  },
   "SDR_Invoice_Submittal_Package_-_ROW.dotx": {
     "originalName": "SDR Invoice Submittal Package - ROW.dotx",
     "savedAt": 1779282676740
@@ -15,12 +11,12 @@
     "originalName": "SDR Invoice Submittal Package - WW.dotx",
     "savedAt": 1779282967028
   },
-  "Invoice_Submittal_Package.dotx": {
-    "originalName": "Invoice_Submittal_Package.dotx",
-    "savedAt": 1779481857727
-  },
   "CTC_Invoice_Submittal_Package.dotx": {
     "originalName": "CTC_Invoice_Submittal_Package.dotx",
     "savedAt": 1779484002062
+  },
+  "LGS_Invoice_Submittal_Package_1.dotx": {
+    "originalName": "LGS_Invoice_Submittal_Package_1.dotx",
+    "savedAt": 1779488256190
   }
 }
